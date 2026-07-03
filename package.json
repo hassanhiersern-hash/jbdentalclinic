@@ -16,7 +16,7 @@
     "@radix-ui/react-toast": "^1.2.4",
     "@vimeo/player": "^2.30.4",
     "bcrypt": "^6.0.0",
-    "better-sqlite3": "^11.6.0",
+    "@libsql/client": "^0.14.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cors": "^2.8.5",

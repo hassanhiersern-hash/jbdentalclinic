@@ -1,8 +1,7 @@
 FROM node:20-alpine
 WORKDIR /app
-COPY package*.json ./
-RUN npm install --ignore-scripts
 COPY . .
+RUN npm install
 RUN npm run build
 RUN mkdir -p data
 RUN npm prune --omit=dev

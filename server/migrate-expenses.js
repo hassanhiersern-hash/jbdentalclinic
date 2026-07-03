@@ -1,8 +1,7 @@
-
 import { getDb } from './db.js';
 
-export function runExpenseMigrations(db) {
-    db.exec(`
+export async function runExpenseMigrations(db) {
+    await db.executeMultiple(`
     CREATE TABLE IF NOT EXISTS expenses (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       description TEXT NOT NULL,
@@ -17,5 +16,6 @@ export function runExpenseMigrations(db) {
 }
 
 const db = getDb();
-runExpenseMigrations(db);
-console.log('Expense table migration complete.');
+runExpenseMigrations(db).then(() => {
+  console.log('Expense table migration complete.');
+}).catch(console.error);

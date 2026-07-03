@@ -13,25 +13,25 @@ import { writeAuditLog } from '../lib/audit.js';
 
 const router = Router();
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { q, limit, offset } = req.query;
     const list = q
-      ? searchPatients(q)
-      : getPatients({ limit: limit ? Math.min(Number(limit), 500) : 100, offset: offset ? Number(offset) : 0 });
+      ? await searchPatients(q)
+      : await getPatients({ limit: limit ? Math.min(Number(limit), 500) : 100, offset: offset ? Number(offset) : 0 });
     res.json(list);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id < 1) {
       return res.status(400).json({ error: 'Invalid id' });
     }
-    const row = getPatientById(id);
+    const row = await getPatientById(id);
     if (!row) return res.status(404).json({ error: 'Patient not found' });
     res.json(row);
   } catch (e) {
@@ -39,10 +39,10 @@ router.get('/:id', (req, res) => {
   }
 });
 
-router.post('/', validatePatientBody, (req, res) => {
+router.post('/', validatePatientBody, async (req, res) => {
   try {
-    const id = createPatient(req.validated);
-    const row = getPatientById(id);
+    const id = await createPatient(req.validated);
+    const row = await getPatientById(id);
     writeAuditLog(req, {
       action: 'CREATE',
       entity_type: 'patient',
@@ -55,16 +55,16 @@ router.post('/', validatePatientBody, (req, res) => {
   }
 });
 
-router.put('/:id', validatePatientBody, (req, res) => {
+router.put('/:id', validatePatientBody, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id < 1) {
       return res.status(400).json({ error: 'Invalid id' });
     }
-    const existing = getPatientById(id);
+    const existing = await getPatientById(id);
     if (!existing) return res.status(404).json({ error: 'Patient not found' });
-    updatePatient(id, req.validated);
-    const row = getPatientById(id);
+    await updatePatient(id, req.validated);
+    const row = await getPatientById(id);
     writeAuditLog(req, {
       action: 'UPDATE',
       entity_type: 'patient',
@@ -78,30 +78,32 @@ router.put('/:id', validatePatientBody, (req, res) => {
   }
 });
 
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id < 1) {
       return res.status(400).json({ error: 'Invalid id' });
     }
-    const existing = getPatientById(id);
+    const existing = await getPatientById(id);
     if (!existing) return res.status(404).json({ error: 'Patient not found' });
 
-    // Check for related records before deletion
     const db = getDb();
+    const count = async (table, col) => {
+      const res = await db.execute({ sql: `SELECT COUNT(*) AS n FROM ${table} WHERE ${col} = ?`, args: [id] });
+      return Number(res.rows[0]?.n) || 0;
+    };
     const refs = [];
-    const count = (table, col) => db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE ${col} = ?`).get(id)?.n || 0;
-    const appts = count('appointments', 'patient_id');
+    const appts = await count('appointments', 'patient_id');
     if (appts) refs.push(`${appts} appointment(s)`);
-    const treats = count('treatments', 'patient_id');
+    const treats = await count('treatments', 'patient_id');
     if (treats) refs.push(`${treats} treatment(s)`);
-    const invs = count('invoices', 'patient_id');
+    const invs = await count('invoices', 'patient_id');
     if (invs) refs.push(`${invs} invoice(s)`);
-    const plans = count('treatment_plans', 'patient_id');
+    const plans = await count('treatment_plans', 'patient_id');
     if (plans) refs.push(`${plans} treatment plan(s)`);
-    const charts = count('dental_chart', 'patient_id');
+    const charts = await count('dental_chart', 'patient_id');
     if (charts) refs.push(`${charts} dental chart entry(ies)`);
-    const reports = count('patient_reports', 'patient_id');
+    const reports = await count('patient_reports', 'patient_id');
     if (reports) refs.push(`${reports} patient report(s)`);
 
     if (refs.length) {
@@ -110,7 +112,7 @@ router.delete('/:id', (req, res) => {
       });
     }
 
-    deletePatient(id);
+    await deletePatient(id);
     writeAuditLog(req, {
       action: 'DELETE',
       entity_type: 'patient',

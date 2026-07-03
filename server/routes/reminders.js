@@ -75,12 +75,11 @@ async function markReminderSent(appointmentId, reminderType) {
   }
 
   const db = getDb();
-  const stmt = db.prepare(`
+  return await db.execute({ sql: `
     UPDATE appointments 
     SET ${column} = datetime('now'), updated_at = datetime('now') 
     WHERE id = ?
-  `);
-  return stmt.run(appointmentId);
+  `, args: [appointmentId] });
 }
 
 async function markEmailReminderSent(appointmentId, reminderType) {
@@ -101,12 +100,11 @@ async function markEmailReminderSent(appointmentId, reminderType) {
   }
 
   const db = getDb();
-  const stmt = db.prepare(`
+  return await db.execute({ sql: `
     UPDATE appointments 
     SET ${column} = datetime('now'), updated_at = datetime('now') 
     WHERE id = ?
-  `);
-  return stmt.run(appointmentId);
+  `, args: [appointmentId] });
 }
 
 async function getAppointmentEmail(apt) {
@@ -128,13 +126,13 @@ async function getAppointmentEmail(apt) {
   const phone = apt.patient_phone ? String(apt.patient_phone) : null;
 
   if (pid) {
-    const row = db.prepare('SELECT email FROM patients WHERE id = ?').get(pid);
-    if (row?.email) return String(row.email).trim();
+    const res = await db.execute({ sql: 'SELECT email FROM patients WHERE id = ?', args: [pid] });
+    if (res.rows[0]?.email) return String(res.rows[0].email).trim();
   }
 
   if (phone) {
-    const row = db.prepare('SELECT email FROM patients WHERE phone = ? LIMIT 1').get(phone);
-    if (row?.email) return String(row.email).trim();
+    const res = await db.execute({ sql: 'SELECT email FROM patients WHERE phone = ? LIMIT 1', args: [phone] });
+    if (res.rows[0]?.email) return String(res.rows[0].email).trim();
   }
 
   return null;
@@ -179,15 +177,15 @@ export async function sendThankYouMessages() {
   const db = getDb();
   // Get appointments created within last hour that haven't received thank you message
   // Also retry appointments where thank you failed (created within last 24 hours)
-  const stmt = db.prepare(`
+  const res = await db.execute({ sql: `
     SELECT * FROM appointments
     WHERE (thank_you_sent_at IS NULL OR thank_you_sent_at = '')
       AND datetime(created_at) >= datetime('now', '-24 hours')
       AND status != 'Cancelled'
     ORDER BY created_at ASC
     LIMIT 50
-  `);
-  const appointments = stmt.all();
+  `, args: [] });
+  const appointments = res.rows;
 
   const results = { sent: 0, failed: [], retried: 0 };
   for (const apt of appointments) {
@@ -262,7 +260,7 @@ export async function send6HourEmailReminders() {
   const timeFrom = new Date(in6Hours.getTime() - 30 * 60 * 1000).toTimeString().slice(0, 5);
   const timeTo = new Date(in6Hours.getTime() + 30 * 60 * 1000).toTimeString().slice(0, 5);
 
-  const stmt = db.prepare(`
+  const res = await db.execute({ sql: `
     SELECT * FROM appointments
     WHERE appointment_date = ?
       AND appointment_time BETWEEN ? AND ?
@@ -270,8 +268,8 @@ export async function send6HourEmailReminders() {
       AND status != 'Cancelled'
     ORDER BY appointment_time ASC
     LIMIT 50
-  `);
-  const appointments = stmt.all(targetDate, timeFrom, timeTo);
+  `, args: [targetDate, timeFrom, timeTo] });
+  const appointments = res.rows;
 
   const results = { sent: 0, skipped: 0, failed: [] };
   for (const apt of appointments) {
@@ -338,15 +336,15 @@ export async function send1DayEmailReminders() {
   tomorrow.setDate(tomorrow.getDate() + 1);
   const tomorrowStr = tomorrow.toISOString().slice(0, 10);
 
-  const stmt = db.prepare(`
+  const res = await db.execute({ sql: `
     SELECT * FROM appointments
     WHERE appointment_date = ?
       AND (reminder_1day_email_sent_at IS NULL OR reminder_1day_email_sent_at = '')
       AND status != 'Cancelled'
     ORDER BY appointment_time ASC
     LIMIT 50
-  `);
-  const appointments = stmt.all(tomorrowStr);
+  `, args: [tomorrowStr] });
+  const appointments = res.rows;
 
   const results = { sent: 0, skipped: 0, failed: [] };
   for (const apt of appointments) {
@@ -409,15 +407,15 @@ export async function sendThankYouEmails() {
   }
 
   const db = getDb();
-  const stmt = db.prepare(`
+  const res = await db.execute({ sql: `
     SELECT * FROM appointments
     WHERE (thank_you_email_sent_at IS NULL OR thank_you_email_sent_at = '')
       AND datetime(created_at) >= datetime('now', '-24 hours')
       AND status != 'Cancelled'
     ORDER BY created_at ASC
     LIMIT 50
-  `);
-  const appointments = stmt.all();
+  `, args: [] });
+  const appointments = res.rows;
 
   const results = { sent: 0, skipped: 0, failed: [] };
   for (const apt of appointments) {
@@ -484,15 +482,15 @@ export async function send1DayReminders() {
   const tomorrowStr = tomorrow.toISOString().slice(0, 10);
 
   // Get appointments for tomorrow that haven't received 1-day reminder, plus retry failed
-  const stmt = db.prepare(`
+  const res = await db.execute({ sql: `
     SELECT * FROM appointments
     WHERE appointment_date = ?
       AND (reminder_1day_sent_at IS NULL OR reminder_1day_sent_at = '')
       AND status != 'Cancelled'
     ORDER BY appointment_time ASC
     LIMIT 50
-  `);
-  const appointments = stmt.all(tomorrowStr);
+  `, args: [tomorrowStr] });
+  const appointments = res.rows;
 
   const results = { sent: 0, failed: [] };
   for (const apt of appointments) {
@@ -570,7 +568,7 @@ export async function send6HourReminders() {
   const timeTo = new Date(in6Hours.getTime() + 30 * 60 * 1000).toTimeString().slice(0, 5);
 
   // Include retry for failed reminders
-  const stmt = db.prepare(`
+  const res = await db.execute({ sql: `
     SELECT * FROM appointments
     WHERE appointment_date = ?
       AND appointment_time BETWEEN ? AND ?
@@ -578,8 +576,8 @@ export async function send6HourReminders() {
       AND status != 'Cancelled'
     ORDER BY appointment_time ASC
     LIMIT 50
-  `);
-  const appointments = stmt.all(targetDate, timeFrom, timeTo);
+  `, args: [targetDate, timeFrom, timeTo] });
+  const appointments = res.rows;
 
   const results = { sent: 0, failed: [] };
   for (const apt of appointments) {
@@ -656,7 +654,7 @@ export async function send1HourReminders() {
   const timeTo = new Date(in1Hour.getTime() + 15 * 60 * 1000).toTimeString().slice(0, 5);
 
   // Include retry for failed reminders
-  const stmt = db.prepare(`
+  const res = await db.execute({ sql: `
     SELECT * FROM appointments
     WHERE appointment_date = ?
       AND appointment_time BETWEEN ? AND ?
@@ -664,8 +662,8 @@ export async function send1HourReminders() {
       AND status != 'Cancelled'
     ORDER BY appointment_time ASC
     LIMIT 50
-  `);
-  const appointments = stmt.all(targetDate, timeFrom, timeTo);
+  `, args: [targetDate, timeFrom, timeTo] });
+  const appointments = res.rows;
 
   const results = { sent: 0, failed: [] };
   for (const apt of appointments) {
@@ -740,7 +738,7 @@ export async function send1HourEmailReminders() {
   const timeFrom = new Date(in1Hour.getTime() - 15 * 60 * 1000).toTimeString().slice(0, 5);
   const timeTo = new Date(in1Hour.getTime() + 15 * 60 * 1000).toTimeString().slice(0, 5);
 
-  const stmt = db.prepare(`
+  const res = await db.execute({ sql: `
     SELECT * FROM appointments
     WHERE appointment_date = ?
       AND appointment_time BETWEEN ? AND ?
@@ -748,8 +746,8 @@ export async function send1HourEmailReminders() {
       AND status != 'Cancelled'
     ORDER BY appointment_time ASC
     LIMIT 50
-  `);
-  const appointments = stmt.all(targetDate, timeFrom, timeTo);
+  `, args: [targetDate, timeFrom, timeTo] });
+  const appointments = res.rows;
 
   const results = { sent: 0, skipped: 0, failed: [] };
   for (const apt of appointments) {

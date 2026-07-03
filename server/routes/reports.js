@@ -24,7 +24,7 @@ router.get('/', (req, res) => {
   res.json({ message: 'Reports API', available_endpoints: ['/balance-sheet', '/dashboard', '/daily-revenue', '/monthly-revenue', '/outstanding', '/expenses'] });
 });
 
-router.get('/balance-sheet', (req, res) => {
+router.get('/balance-sheet', async (req, res) => {
   try {
     const { type, date } = req.query; // type: daily, weekly, monthly
     const targetDate = date || new Date().toISOString().slice(0, 10);
@@ -35,8 +35,8 @@ router.get('/balance-sheet', (req, res) => {
 
     if (type === 'monthly') {
       const month = targetDate.slice(0, 7);
-      revenue = getMonthlyRevenue(month);
-      expense = getMonthlyExpenses(month);
+      revenue = await getMonthlyRevenue(month);
+      expense = await getMonthlyExpenses(month);
       period = `Month: ${month}`;
     } else if (type === 'weekly') {
       const d = new Date(targetDate);
@@ -45,12 +45,12 @@ router.get('/balance-sheet', (req, res) => {
       const start = new Date(d.setDate(diff)).toISOString().slice(0, 10);
       const end = new Date(d.setDate(diff + 6)).toISOString().slice(0, 10);
 
-      revenue = getRevenueRange(start, end);
-      expense = getExpenseRange(start, end);
+      revenue = await getRevenueRange(start, end);
+      expense = await getExpenseRange(start, end);
       period = `Week: ${start} to ${end}`;
     } else {
-      revenue = getDailyRevenue(targetDate);
-      expense = getDailyExpenses(targetDate);
+      revenue = await getDailyRevenue(targetDate);
+      expense = await getDailyExpenses(targetDate);
       period = `Date: ${targetDate}`;
     }
 
@@ -65,31 +65,31 @@ router.get('/balance-sheet', (req, res) => {
   }
 });
 
-router.get('/dashboard', (req, res) => {
+router.get('/dashboard', async (req, res) => {
   try {
     const today = new Date().toISOString().slice(0, 10);
     const thisMonth = today.slice(0, 7);
 
     // Get today's appointments
-    const todayAppointments = getAppointments({ fromDate: today, toDate: today, limit: 100 });
+    const todayAppointments = await getAppointments({ fromDate: today, toDate: today, limit: 100 });
 
     // Get total patient count efficiently
-    const totalPatients = getDb().prepare('SELECT COUNT(*) AS n FROM patients').get()?.n || 0;
+    const totalPatients = (await getDb().execute('SELECT COUNT(*) AS n FROM patients')).rows[0]?.n || 0;
 
     // Get pending invoices
-    const pendingInvoices = getInvoices({ status: 'Pending', limit: 100 });
+    const pendingInvoices = await getInvoices({ status: 'Pending', limit: 100 });
 
     // Get low stock items
-    const lowStockItems = getLowStockItems();
+    const lowStockItems = await getLowStockItems();
 
     // Get recent treatments
-    const recentTreatments = getTreatments({ limit: 10 });
+    const recentTreatments = await getTreatments({ limit: 10 });
 
     // Get financial data
-    const daily = getDailyRevenue(today);
-    const monthly = getMonthlyRevenue(thisMonth);
-    const outstanding = getTotalOutstanding();
-    const balances = getOutstandingBalances();
+    const daily = await getDailyRevenue(today);
+    const monthly = await getMonthlyRevenue(thisMonth);
+    const outstanding = await getTotalOutstanding();
+    const balances = await getOutstandingBalances();
 
     res.json({
       // Appointments
@@ -123,30 +123,30 @@ router.get('/dashboard', (req, res) => {
   }
 });
 
-router.get('/daily-revenue', (req, res) => {
+router.get('/daily-revenue', async (req, res) => {
   try {
     const date = req.query.date || new Date().toISOString().slice(0, 10);
-    const total = getDailyRevenue(date);
+    const total = await getDailyRevenue(date);
     res.json({ date, revenue: total });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-router.get('/monthly-revenue', (req, res) => {
+router.get('/monthly-revenue', async (req, res) => {
   try {
     const yearMonth = req.query.month || new Date().toISOString().slice(0, 7);
-    const total = getMonthlyRevenue(yearMonth);
+    const total = await getMonthlyRevenue(yearMonth);
     res.json({ month: yearMonth, revenue: total });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-router.get('/outstanding', (req, res) => {
+router.get('/outstanding', async (req, res) => {
   try {
-    const balances = getOutstandingBalances();
-    const total = getTotalOutstanding();
+    const balances = await getOutstandingBalances();
+    const total = await getTotalOutstanding();
     res.json({ total_outstanding: total, items: balances });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -154,10 +154,10 @@ router.get('/outstanding', (req, res) => {
 });
 
 // Expenses
-router.get('/expenses', (req, res) => {
+router.get('/expenses', async (req, res) => {
   try {
     const { fromDate, toDate, limit } = req.query;
-    const expenses = getExpenses({ fromDate, toDate, limit });
+    const expenses = await getExpenses({ fromDate, toDate, limit });
     res.json(expenses);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -165,7 +165,7 @@ router.get('/expenses', (req, res) => {
 });
 
 // Cashbook: combined income (payments) + expenses timeline
-router.get('/cashbook', (req, res) => {
+router.get('/cashbook', async (req, res) => {
   try {
     const { from_date, to_date, limit = 200, offset = 0 } = req.query;
     const db = getDb();
@@ -208,14 +208,17 @@ router.get('/cashbook', (req, res) => {
     `;
 
     const allParams = [...params, ...params, Math.min(Number(limit), 500), Number(offset) || 0];
-    const entries = db.prepare(combinedSQL).all(...allParams);
+    const entriesRes = await db.execute({ sql: combinedSQL, args: allParams });
+    const entries = entriesRes.rows;
 
     // Get totals for the period
     const totalIncomeSQL = `SELECT COALESCE(SUM(p.amount), 0) AS total FROM payments p WHERE 1=1 ${dateFilter.replace(/date/g, "date(p.paid_at)")}`;
     const totalExpenseSQL = `SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE 1=1 ${dateFilter}`;
 
-    const totalIncome = db.prepare(totalIncomeSQL).get(...params)?.total || 0;
-    const totalExpenses = db.prepare(totalExpenseSQL).get(...params)?.total || 0;
+    const totalIncomeRes = await db.execute({ sql: totalIncomeSQL, args: params });
+    const totalIncome = totalIncomeRes.rows[0]?.total || 0;
+    const totalExpenseRes = await db.execute({ sql: totalExpenseSQL, args: params });
+    const totalExpenses = totalExpenseRes.rows[0]?.total || 0;
 
     res.json({
       entries,
@@ -231,7 +234,7 @@ router.get('/cashbook', (req, res) => {
 });
 
 // Profit & Loss: detailed income + expense breakdown
-router.get('/profit-loss', (req, res) => {
+router.get('/profit-loss', async (req, res) => {
   try {
     const { from_date, to_date } = req.query;
     const db = getDb();
@@ -248,11 +251,12 @@ router.get('/profit-loss', (req, res) => {
       WHERE 1=1 ${dateFilter.replace(/date/g, "date(p.paid_at)")}
       GROUP BY p.payment_method ORDER BY amount DESC
     `;
-    const incomeByMethod = db.prepare(incomeByMethodSQL).all(...params);
+    const incomeByMethod = (await db.execute({ sql: incomeByMethodSQL, args: params })).rows;
 
     // Total income
     const totalIncomeSQL = `SELECT COALESCE(SUM(p.amount), 0) AS total FROM payments p WHERE 1=1 ${dateFilter.replace(/date/g, "date(p.paid_at)")}`;
-    const totalIncome = db.prepare(totalIncomeSQL).get(...params)?.total || 0;
+    const totalIncomeRes = await db.execute({ sql: totalIncomeSQL, args: params });
+    const totalIncome = totalIncomeRes.rows[0]?.total || 0;
 
     // Expenses by category
     const expByCatSQL = `
@@ -261,11 +265,12 @@ router.get('/profit-loss', (req, res) => {
       WHERE 1=1 ${dateFilter}
       GROUP BY category ORDER BY amount DESC
     `;
-    const expensesByCategory = db.prepare(expByCatSQL).all(...params);
+    const expensesByCategory = (await db.execute({ sql: expByCatSQL, args: params })).rows;
 
     // Total expenses
     const totalExpenseSQL = `SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE 1=1 ${dateFilter}`;
-    const totalExpenses = db.prepare(totalExpenseSQL).get(...params)?.total || 0;
+    const totalExpenseRes = await db.execute({ sql: totalExpenseSQL, args: params });
+    const totalExpenses = totalExpenseRes.rows[0]?.total || 0;
 
     // Recent income entries (payments)
     const recentIncomeSQL = `
@@ -278,7 +283,7 @@ router.get('/profit-loss', (req, res) => {
       WHERE 1=1 ${dateFilter.replace(/date/g, "date(p.paid_at)")}
       ORDER BY p.paid_at DESC LIMIT 50
     `;
-    const recentIncome = db.prepare(recentIncomeSQL).all(...params);
+    const recentIncome = (await db.execute({ sql: recentIncomeSQL, args: params })).rows;
 
     // Recent expense entries
     const recentExpenseSQL = `
@@ -287,7 +292,7 @@ router.get('/profit-loss', (req, res) => {
       WHERE 1=1 ${dateFilter}
       ORDER BY date DESC LIMIT 50
     `;
-    const recentExpenses = db.prepare(recentExpenseSQL).all(...params);
+    const recentExpenses = (await db.execute({ sql: recentExpenseSQL, args: params })).rows;
 
     res.json({
       income: {

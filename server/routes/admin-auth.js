@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
-import { getDb } from '../db.js';
+import { getUserByEmail } from '../db.js';
 import { JWT_SECRET, JWT_EXPIRY } from '../config/admin.js';
 import { writeAuditLog } from '../lib/audit.js';
 
@@ -18,8 +18,7 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    const db = getDb();
-    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(String(email).trim().toLowerCase());
+    const user = await getUserByEmail(String(email).trim().toLowerCase());
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password' });
