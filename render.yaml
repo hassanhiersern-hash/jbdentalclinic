@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: jbdentalclinic
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: jbdentalclinic-db
+          property: connectionString
+      - key: ADMIN_API_KEY
+        generateValue: true
+      - key: ADMIN_EMAIL
+        value: admin@jbdentalclinic.com
+      - key: ADMIN_PASSWORD
+        generateValue: true
+      - key: DATABASE_PATH
+        value: /data/appointments.db
+    healthCheckPath: /
+    autoDeploy: true
+
+databases:
+  - name: jbdentalclinic-db
+    plan: free
+    databaseName: jbdentalclinic
+    user: jbdentalclinic_user
