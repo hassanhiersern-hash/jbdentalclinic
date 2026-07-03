@@ -15,7 +15,7 @@ export async function createTestContext() {
   process.env.JWT_SECRET = 'test-jwt-secret-with-sufficient-length-12345';
   process.env.ADMIN_EMAIL = 'admin@test.local';
   process.env.ADMIN_PASSWORD = 'Admin12345!';
-  process.env.DATABASE_PATH = dbPath;
+  process.env.TURSO_DATABASE_URL = 'file:' + dbPath;
 
   closeDb();
   const app = createApp();
@@ -31,7 +31,8 @@ export async function createTestContext() {
       }
 
       const id = await createUser({ email, password, role });
-      return getDb().prepare('SELECT id, email, role FROM users WHERE id = ?').get(id);
+      const res = await getDb().execute({ sql: 'SELECT id, email, role FROM users WHERE id = ?', args: [id] });
+      return res.rows[0];
     },
     signToken(payload, secret = JWT_SECRET) {
       return jwt.sign(payload, secret, { expiresIn: '1h' });

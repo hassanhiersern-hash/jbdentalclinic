@@ -32,23 +32,13 @@ const __dirname = path.dirname(__filename);
 
 export function initializeServerState() {
   console.log('[STARTUP] Initializing database...');
-  console.log(
-    `[STARTUP] DATABASE_PATH: ${process.env.DATABASE_PATH || '/app/data/appointments.db (default)'}`
-  );
-
   validateAdminConfig();
-  initDb();
 
-  const db = getDb();
-  const dbPath = db.name;
-  console.log(`[STARTUP] Database path: ${dbPath}`);
-  console.log(`[STARTUP] Database file exists: ${fs.existsSync(dbPath)}`);
-
-  if (dbPath.includes('/app/data')) {
-    console.log('[STARTUP] Using persistent volume at /app/data');
-  } else {
-    console.log('[STARTUP] Using local data directory - data may be lost on redeploy!');
-  }
+  initDb().then(() => {
+    console.log('[STARTUP] Database connection and migrations verified successfully.');
+  }).catch((err) => {
+    console.error('[STARTUP] Database connection failed:', err);
+  });
 }
 
 function configureFrontend(app) {
